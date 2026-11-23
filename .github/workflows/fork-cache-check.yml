@@ -1,0 +1,47 @@
+name: Fork branch cache scope verification
+        on:
+          workflow_dispatch:
+            inputs:
+              operation:
+                description: Save or restore test cache
+                required: true
+                type: choice
+                options:
+                  - save
+                  - restore
+          pull_request:
+            branches:
+              - main
+        jobs:
+          test:
+            runs-on: blacksmith-staging-2vcpu-ubuntu-2404
+            steps:
+              - name: Write test cache marker
+                if: github.event_name == 'workflow_dispatch' && inputs.operation == 'save' && github.ref_name == 'repro-canary-17205c76'
+                run: |
+                  mkdir -p /tmp/bs-repro-fork-17205c76
+                  printf '%s' 'REPRO_BASE_17205c76' > /tmp/bs-repro-fork-17205c76/marker
+              - name: Save trusted test cache
+                if: github.event_name == 'workflow_dispatch' && inputs.operation == 'save' && github.ref_name == 'repro-canary-17205c76'
+                uses: actions/cache/save@v4
+                with:
+                  path: /tmp/bs-repro-fork-17205c76
+                  key: bs-repro-fork-17205c76
+              - name: Restore test cache
+                if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.operation == 'restore')
+                id: cache
+                uses: actions/cache/restore@v4
+                with:
+                  path: /tmp/bs-repro-fork-17205c76
+                  key: bs-repro-fork-17205c76
+              - name: Report test result
+                if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.operation == 'restore')
+                run: |
+                  echo "CACHE_HIT=${{ steps.cache.outputs.cache-hit }}"
+                  if test -f /tmp/bs-repro-fork-17205c76/marker; then cat /tmp/bs-repro-fork-17205c76/marker; else echo CACHE_MISS; fi
+              - uses: actions/checkout@v4
+                if: github.event_name == 'pull_request'
+              - name: Run contributor test script
+                if: github.event_name == 'pull_request'
+                run: bash contributor-proof.sh
+        
